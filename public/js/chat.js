@@ -7,7 +7,7 @@ const socket = io()
 socket.on('welcome', (welcome) => {
     // welcomeP = document.getElementById('welcome')
     // welcomeP.innerHTML = welcome
-    console.log(welcome)
+    console.log(welcome.message)
 })
 
 // Elements-prepended with $
@@ -16,17 +16,51 @@ const $messageFormInput = $messageForm.querySelector("input")
 const $messageFormButton = $messageForm.querySelector("button")
 const $locationButton = document.querySelector('#location-button')
 const $messages = document.querySelector('#messages')
+// const $locations = documnet.querySelector('')
 
 // Templates
 const messageTemplate = document.querySelector('#message-template').innerHTML
+const locationTemplate = document.querySelector('#location-template').innerHTML
+const sidebarTemplate = document.querySelector('#sidebar-template').innerHTML
+
+// Options
+const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true })
+const autoScroll = () => {
+    // get new message element
+    const $newMessage = $messages.lastElementChild
+
+    // get the height of the new message
+    const newMessageStyles = getComputedStyle($newMessage)
+    const newMessageMargin = parseInt(newMessageStyles.marginBottom)
+    const newMessageHeight = $newMessage.offsetHeight + newMessageMargin*2
+
+    // get visible height
+    const visibleHeight = $messages.offsetHeight
+
+    // height of messages container
+    const containerHeight = $messages.scrollHeight
+
+    // how far have I scrolled
+    const scrollOffset = $messages.scrollTop + visibleHeight
+
+    if(containerHeight - newMessageHeight <= scrollOffset) {
+        $messages.scrollTop = $messages.scrollHeight
+    }
+}
 
 // log message sent from server
 // socket.on(<event_name>, <received data>)
 socket.on("messageFromServer", (message) => {
-    console.log("new message: ", message)
-    messageTemplate.innerHTML = message
-    const html = Mustache.render(messageTemplate, { message })
+    console.log("new message: ", message.message)
+    messageTemplate.innerHTML = message.message
+    const html = Mustache.render(messageTemplate, { 
+        username: message.username,
+        createdAt: moment(message.createdAt).format('h:mm:A'), 
+        message: message.message 
+    })
     $messages.insertAdjacentHTML('beforeend', html)
+
+    autoScroll()
 })
 
 
@@ -52,6 +86,7 @@ $messageForm.addEventListener('submit', (event)=> {
     }) 
 })
 
+
 // add event listener to send users geolocation
 $locationButton.addEventListener('click', () => {
     if(!navigator.geolocation) {
@@ -62,10 +97,8 @@ $locationButton.addEventListener('click', () => {
     // get users location and share with other users
     navigator.geolocation.getCurrentPosition((position) => {
         // console.log(position)
-        socket.emit('sendLocation', {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-        }, () => {
+        const link = `http://google.com/maps/?q=${position.coords.latitude},${position.coords.longitude}`
+        socket.emit('sendLocation', link, () => {
             // enable location button
             $locationButton.removeAttribute('disabled')
             console.log('Location shared.')
@@ -73,4 +106,37 @@ $locationButton.addEventListener('click', () => {
     })
 })
 
+// Add a link with location to the chat
+socket.on('locationFromServer', (location) => {
+    console.log('new location ' + location.link)
+    locationTemplate.href = location.link
+    const html = Mustache.render(locationTemplate, {
+        username: location.username, 
+        createdAt: moment(location.createdAt).format('h:mm:A'),
+        link: location.link })
+    $messages.insertAdjacentHTML('beforeend', html)
 
+    autoScroll()
+})
+
+// Update side bar with room users
+socket.on('roomData', ({room, users}) => {
+    // console.log('room: ', room)
+    // console.log('users: ', users)
+    const html = Mustache.render(sidebarTemplate, {
+        room,
+        users
+    })
+    document.querySelector('#sidebar').innerHTML = html
+})
+
+
+
+// emit qeury parameters
+socket.emit('join', { username, room }, (error) => {
+    if (error) {
+        alert(error)
+        //  redirect to homepage
+        location.href = '/'
+    }
+})
